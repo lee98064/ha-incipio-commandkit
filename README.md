@@ -1,14 +1,16 @@
 # Incipio CommandKit Metering
 
-A Home Assistant custom integration that reads voltage, current and power from an Incipio CommandKit **CMNDKT-004**, using its existing HomeKit Device connection.
+A Home Assistant custom integration that controls an Incipio CommandKit **CMNDKT-004** outlet and reads its voltage, current and power, using its existing HomeKit Device connection.
 
-讓已經配對到 Home Assistant 的 Incipio CommandKit CMNDKT-004 顯示電壓、電流與功率。預設每 **10 秒**更新，可在新增整合時選擇 5 秒。
+讓已經配對到 Home Assistant 的 Incipio CommandKit CMNDKT-004 在同一個裝置頁提供**插座開關、電壓、電流與功率**。預設每 **10 秒**更新，可在新增整合時選擇 5 秒；開關指令送出後會立即重新整理狀態。
 
-**0.1.1 修正三個感測器一直顯示「未知」的狀態判斷錯誤。** 14 個離線測試包含真實 aiohomekit 資料模型；更新後仍待 HAOS 實機確認。原始碼介面以 Home Assistant Core **2026.9.4**、aiohomekit **4.0.1** 為依據；更高版本仍需確認相容性。這是社群自訂整合，與 Incipio、CviLux 或 Opro9 沒有官方關係。
+**0.2.0 加入插座開關控制，並保留 0.1.1 的「未知」修正。** 26 個離線測試包含真實 aiohomekit 資料模型；更新後仍待 HAOS 實機確認。原始碼介面以 Home Assistant Core **2026.9.4**、aiohomekit **4.0.1** 為依據；更高版本仍需確認相容性。這是社群自訂整合，與 Incipio、CviLux 或 Opro9 沒有官方關係。
 
 ## 使用前
 
 插座必須已經透過 **HomeKit Device / homekit_controller** 配對到 HA，而且開關可以正常控制。本整合直接使用該連線，不需再輸入 HomeKit PIN，也不需填寫 IP、HA token 或 MQTT 設定。
+
+**請保留並啟用 HomeKit Device 整合**，它仍負責連線與配對。日常操作可以全部使用本整合新增的 `Incipio Outlet`；原有 HomeKit 開關可從儀表板移除。
 
 ## 安裝方式一：HACS 自訂 repository
 
@@ -25,7 +27,7 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
 
 ## 安裝方式二：手動安裝
 
-1. 到 [Releases](https://github.com/lee98064/ha-incipio-commandkit/releases/latest) 下載 **`incipio-commandkit-0.1.1.zip`**。
+1. 到 [Releases](https://github.com/lee98064/ha-incipio-commandkit/releases/latest) 下載 **`incipio-commandkit-0.2.0.zip`**。
 2. 解壓縮，把 `custom_components/incipio_commandkit/` 整個資料夾複製到 HA 的 **`/config/custom_components/incipio_commandkit/`**。可使用已設定的 Samba 分享或 File editor 等工具上傳。
 3. 確認檔案直接位於該資料夾，避免多包一層：
 
@@ -36,6 +38,7 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
    /config/custom_components/incipio_commandkit/coordinator.py
    /config/custom_components/incipio_commandkit/discovery.py
    /config/custom_components/incipio_commandkit/sensor.py
+   /config/custom_components/incipio_commandkit/switch.py
    /config/custom_components/incipio_commandkit/translations/
    /config/custom_components/incipio_commandkit/brand/
    ```
@@ -44,11 +47,11 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
 
 也可以下載 GitHub **Code → Download ZIP**，從其中取出相同的 `custom_components/incipio_commandkit/`。
 
-## 從 0.1.0 更新
+## 從 0.1.x 更新
 
 1. 用 HACS 更新，或下載上面的 ZIP，將 `custom_components/incipio_commandkit/` 覆蓋到 HA 的 `/config/custom_components/incipio_commandkit/`。
 2. **重新啟動 Home Assistant Core**，等 HomeKit Device 載入及下一次輪詢（預設 10 秒）。
-3. 回到原有裝置頁查看三個感測器。保留已新增的 Incipio 整合、entity 與 HomeKit Device 配對，不需要刪除或重新新增。
+3. 回到原有裝置頁，三個感測器會保留，並自動新增 **Incipio Outlet** 開關。保留已新增的 Incipio 整合、entity 與 HomeKit Device 配對，不需要刪除或重新新增。
 
 0.1.0 錯把 aiohomekit 的成功狀態 Enum 與整數 `0` 比較，因此即使 HomeKit 有有效值，三個感測器仍會變成 `unknown`。0.1.1 使用 `HapStatusCode.SUCCESS` 比較；遇到實際的 HomeKit 錯誤時，仍不會把快取值當作正常讀值。
 
@@ -57,19 +60,20 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
 1. 等既有 **HomeKit Device** 整合載入。
 2. 開啟 **設定 → 裝置與服務 → 新增整合**，搜尋 **Incipio CommandKit Metering**。
 3. 選取你的 **CMNDKT-004**，更新間隔先選 **10 秒**。
-4. 開啟插座裝置頁，會新增三個 sensor。也可到 **開發者工具 → 狀態**檢查：
+4. 開啟插座裝置頁，會新增一個開關與三個 sensor。也可到 **開發者工具 → 狀態**檢查：
 
    | 預設 entity ID | 資料 | 單位 | device_class |
    |---|---|---|---|
+   | `switch.incipio_outlet` | 插座開／關 | — | outlet |
    | `sensor.incipio_voltage` | 電壓 | V | voltage |
    | `sensor.incipio_current` | 電流 | A | current |
    | `sensor.incipio_power` | 功率 | W | power |
 
    如果已有同名 entity，HA 可能加上尾碼；可以到 entity 設定中改名。
 
-5. 在儀表板新增 **Entities／實體卡片**，選入這三個 sensor，就能查看數值。
+5. 在儀表板新增 **Entities／實體卡片**，選入開關與三個 sensor，就能控制插座並查看數值。既有儀表板若使用原 HomeKit 開關，可以把該卡片的 entity 換成 `switch.incipio_outlet`。
 
-原有 HomeKit Device 的插座開關會繼續使用。這三個 sensor 不需額外 YAML。
+本整合的開關、原 HomeKit 開關與插座實體按鈕控制同一顆繼電器；外部操作的狀態會在下一次輪詢（5 或 10 秒）反映。開關指令完成後會重新整理 HomeKit 狀態，未確認目標狀態時會回報錯誤。四個 entity 不需額外 YAML。
 
 ## 資料與限制
 
@@ -81,15 +85,21 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
 
 透過型號 `CMNDKT-004`、Energy Usage service UUID `14FA9D31-FC94-4F98-B00D-4AE878523748` 與三個可讀 characteristic UUID 找出 AID/IID，不把 13/14/15 寫死。
 
+開關使用標準 Outlet service `00000047-0000-1000-8000-0026BB765291` 中的 On characteristic `00000025-0000-1000-8000-0026BB765291`，要求 `bool` 格式與 `pr`、`pw` 權限。AID/IID 由目前的 metadata 解析，不把 IID 9 寫死。找不到符合條件的 On characteristic 時仍提供三個 sensor，但不建立開關。
+
 韌體 10219 的裝置 metadata 將這三個 UUID 標為 `Voltage`、`Current`、`Watt`；V / A / W 的單位結合名稱、數值與值域推定，**尚無同型號原廠 UUID 對照表，也未用獨立電表驗證**。保留原始數值，不乘倍率或四捨五入。建議先比較負載開／關時的讀值。
 
 功率 **W** 不是累計電量 **kWh**；本整合沒有建立可直接加入 Energy Dashboard 的累計電量 entity。
 
-向既有 `HKDevice` 登記三個 pollable characteristic，呼叫原生 `async_update()`，沿用它的輪詢鎖、連線恢復和快取；原生已登記的其他可讀 characteristic 也可能一起被讀取。HomeKit 連線重新載入後會改用目前的連線和 metadata。短暫通訊失敗沿用原生可用性判斷，可能暫留上次數值。
+向既有 `HKDevice` 登記三個電力 characteristic 與開關 On characteristic，呼叫原生 `async_update()`，沿用它的輪詢鎖、連線恢復和快取；原生已登記的其他可讀 characteristic 也可能一起被讀取。控制使用原生 `put_characteristics()`，只寫入已解析的 Outlet / On。HomeKit 連線重新載入後會改用目前的連線和 metadata。短暫通訊失敗沿用原生可用性判斷，可能暫留上次數值。
 
-本整合只提供電力監測，沒有韌體更新、LED 關閉或寫入 characteristic 的功能。它使用 HomeKit Device 的**內部 Python 介面**，Core 升級後需重新核對相容性。請勿同時安裝另一份讀取同一組 private UUID 的自訂整合，原生 pollable 登記集合沒有引用計數。
+本整合提供開關控制與電力監測，沒有韌體更新或 LED 關閉功能，也不寫入 private characteristic。它使用 HomeKit Device 的**內部 Python 介面**，Core 升級後需重新核對相容性。請勿同時安裝另一份讀取同一組 private UUID 的自訂整合，原生 pollable 登記集合沒有引用計數。
 
 ## 常見問題
+
+**可以刪掉 HomeKit Device 整合嗎？**
+
+請保留並啟用它。Incipio 整合使用該連線與配對，刪除或停用整合會讓新開關和感測器無法使用。你可以把原 HomeKit 開關從儀表板移除，並在需要時將自動化目標改為 `switch.incipio_outlet`。
 
 **新增整合時找不到 CMNDKT-004**
 
@@ -120,7 +130,7 @@ python3 -m venv .venv
 .venv/bin/python -m compileall -q custom_components tests
 ```
 
-14 個測試使用模擬 HA coordinator／HomeKit connection 與真正的 **aiohomekit 4.0.1** 狀態 Enum。其中三個解析已去識別化的韌體 10219 accessory metadata，以真實資料模型驗證成功狀態、輪詢後的快取更新、錯誤及恢復。其他測試驗證 UUID 解析、可讀權限、連線重新載入、IIDs 改變、登記清理、異常值及韌體 characteristic 不被額外輪詢／寫入。GitHub Actions 重跑相同的離線測試與語法檢查；不代表 HAOS 實機驗證。
+26 個測試使用模擬 HA coordinator／HomeKit connection 與真正的 **aiohomekit 4.0.1** 狀態 Enum、資料模型及已去識別化的韌體 10219 accessory metadata。驗證成功狀態、快取更新、錯誤恢復、開／關指令、外部狀態同步、權限與服務限制、斷線、未確認指令、並行指令序列、連線和 IIDs 變更、登記清理及異常值。控制測試限定唯一寫入為標準 Outlet / On，韌體 characteristic 不被額外輪詢或寫入。GitHub Actions 重跑相同的離線測試與語法檢查；不代表 HAOS 實機驗證。
 
 原生介面依據：[Core 2026.9.4 HomeKit connection](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/homekit_controller/connection.py)、[Core coordinator](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/helpers/update_coordinator.py)、[HomeKit Device 文件](https://www.home-assistant.io/integrations/homekit_controller/)。
 

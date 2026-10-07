@@ -1,4 +1,4 @@
-"""Incipio CommandKit metering for an already paired HomeKit device."""
+"""Incipio CommandKit metering and control for an already paired HomeKit device."""
 
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -6,11 +6,11 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from .coordinator import MeterCoordinator, existing_connection
 from .discovery import discover_meters
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
 
 
 async def async_setup_entry(hass, entry):
-    """Reuse a loaded HomeKit Device entry and expose read-only sensors."""
+    """Reuse a loaded HomeKit Device entry and expose meters and an outlet switch."""
     connection = existing_connection(hass, entry.data["homekit_entry_id"])
     if connection is None:
         raise ConfigEntryNotReady("Wait for the existing HomeKit Device connection")
@@ -30,7 +30,7 @@ async def async_setup_entry(hass, entry):
 
 
 async def async_unload_entry(hass, entry):
-    """Remove these sensors without closing or unpairing the HomeKit device."""
+    """Remove entities without closing or unpairing the HomeKit device."""
     if await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         await entry.runtime_data.async_shutdown()
         entry.runtime_data.release()

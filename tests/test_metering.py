@@ -1,6 +1,7 @@
 """Offline boundary tests; no Home Assistant server or outlet is contacted."""
 
 from enum import Enum
+import asyncio
 import importlib.util
 import json
 from pathlib import Path
@@ -9,6 +10,9 @@ from types import ModuleType, SimpleNamespace
 import unittest
 
 from aiohomekit.model import Accessories
+from aiohomekit.exceptions import AccessoryDisconnectedError
+from aiohomekit.model.characteristics import CharacteristicsTypes
+from aiohomekit.model.services import ServicesTypes
 from aiohomekit.protocol.statuscodes import HapStatusCode
 
 COMPONENT = Path(__file__).resolve().parents[1] / "custom_components" / "incipio_commandkit"
@@ -28,15 +32,44 @@ class UpdateFailed(Exception):
     pass
 
 
+class HomeAssistantError(Exception):
+    pass
+
+
 class CoordinatorStub:
     def __init__(self, hass, logger, **kwargs):
         self.hass = hass
+        self.data = {}
+        self.last_update_success = True
+
+    async def async_refresh(self):
+        try:
+            self.data = await self._async_update_data()
+        except UpdateFailed:
+            self.last_update_success = False
+        else:
+            self.last_update_success = True
+
+
+class CoordinatorEntityStub:
+    def __init__(self, coordinator):
+        self.coordinator = coordinator
+
+    @property
+    def available(self):
+        return self.coordinator.last_update_success
+
+
+class SwitchDeviceClass(Enum):
+    OUTLET = "outlet"
 
 
 for name, attrs in {
     "homeassistant.components.homekit_controller.const": {"KNOWN_DEVICES": "homekit_controller-devices"},
     "homeassistant.config_entries": {"ConfigEntryState": EntryState},
-    "homeassistant.helpers.update_coordinator": {"DataUpdateCoordinator": CoordinatorStub, "UpdateFailed": UpdateFailed},
+    "homeassistant.exceptions": {"HomeAssistantError": HomeAssistantError},
+    "homeassistant.helpers.update_coordinator": {"DataUpdateCoordinator": CoordinatorStub, "UpdateFailed": UpdateFailed, "CoordinatorEntity": CoordinatorEntityStub},
+    "homeassistant.components.switch": {"SwitchEntity": type("SwitchEntity", (), {}), "SwitchDeviceClass": SwitchDeviceClass},
 }.items():
     module = ModuleType(name)
     module.__dict__.update(attrs)
@@ -53,6 +86,7 @@ def load_module(name):
 
 discovery = load_module("discovery")
 coordinator = load_module("coordinator")
+switch = load_module("switch")
 
 
 class Connection:
@@ -179,7 +213,7 @@ class MeterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(char.status, 0)
         self.assertEqual(
             await self.reader._async_update_data(),
-            {"voltage": 121.421875, "current": 0.003906, "power": 0.0},
+            {"voltage": 121.421875, "current": 0.003906, "power": 0.0, "on": False},
         )
 
     async def test_real_model_values_update_through_native_cache(self):
@@ -196,7 +230,7 @@ class MeterTests(unittest.IsolatedAsyncioTestCase):
         self.conn.async_update = poll
         self.assertEqual(
             await self.reader._async_update_data(),
-            {"voltage": 120.5, "current": 0.5, "power": 60.25},
+            {"voltage": 120.5, "current": 0.5, "power": 60.25, "on": False},
         )
 
     async def test_real_model_error_and_recovery(self):
@@ -208,6 +242,184 @@ class MeterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["power"], 0.0)
         self.conn.entity_map.process_changes({(1, 13): {"value": 120.5, "status": 0}})
         self.assertEqual((await self.reader._async_update_data())["voltage"], 120.5)
+
+
+class ControlConnection(Connection):
+    """Simulate HKDevice's acknowledged write updating the real accessory cache."""
+
+    def __init__(self, offset=0):
+        super().__init__()
+        fixture = Path(__file__).parent / "fixtures" / "commandkit_10219.json"
+        accessories = json.loads(fixture.read_text())
+        for accessory in accessories:
+            for service in accessory["services"]:
+                service["iid"] += offset
+                for char in service["characteristics"]:
+                    char["iid"] += offset
+        self.entity_map = Accessories.from_list(accessories)
+        self.writes = []
+        self.ignore_writes = False
+        self.write_error = None
+
+    def device_info_for_accessory(self, accessory):
+        return {"identifiers": {("homekit_controller", f"{self.unique_id}:{accessory.aid}")}}
+
+    async def put_characteristics(self, payload):
+        self.writes.append(payload)
+        self.assert_outlet_only(payload)
+        if self.write_error is not None:
+            raise self.write_error
+        if not self.ignore_writes:
+            self.entity_map.process_changes({
+                (aid, iid): {"value": value} for aid, iid, value in payload
+            })
+
+    def assert_outlet_only(self, payload):
+        assert len(payload) == 1
+        aid, iid, value = payload[0]
+        char = self.entity_map.aid(aid).characteristics.iid(iid)
+        assert char.type == CharacteristicsTypes.ON
+        assert char.service.type == ServicesTypes.OUTLET
+        assert isinstance(value, bool)
+
+
+class OutletTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.conn = ControlConnection()
+        self.connections = {"public-homekit-id": self.conn}
+        self.hass = SimpleNamespace(data={"homekit_controller-devices": self.connections})
+        self.entry = SimpleNamespace(data={"homekit_entry_id": "existing-homekit", "aid": 1, "poll_seconds": 10})
+        self.reader = coordinator.MeterCoordinator(self.hass, self.entry)
+
+    async def test_switch_turns_on_and_off_without_touching_firmware(self):
+        await self.reader.async_refresh()
+        entity = switch.OutletSwitch(self.reader)
+        self.assertFalse(entity.is_on)
+        self.assertTrue(entity.available)
+        await entity.async_turn_on()
+        self.assertTrue(entity.is_on)
+        await entity.async_turn_off()
+        self.assertFalse(entity.is_on)
+        self.assertEqual(self.conn.writes, [[(1, 9, True)], [(1, 9, False)]])
+        self.assertFalse(self.conn.entity_map.aid(1).characteristics.iid(18).value)
+        self.assertEqual(self.reader.data["voltage"], 121.421875)
+        self.assertEqual(entity._attr_unique_id, "public-homekit-id_1_outlet")
+        self.assertEqual(entity._attr_device_info, self.conn.device_info_for_accessory(self.reader.meter.accessory))
+
+    async def test_external_switch_change_is_read_back(self):
+        await self.reader.async_refresh()
+        entity = switch.OutletSwitch(self.reader)
+        self.conn.entity_map.process_changes({(1, 9): {"value": True}})
+        await self.reader.async_refresh()
+        self.assertTrue(entity.is_on)
+        self.assertEqual(self.conn.writes, [])
+
+    async def test_write_re_resolves_reloaded_connection_and_iid(self):
+        await self.reader.async_refresh()
+        replacement = ControlConnection(offset=100)
+        self.connections["public-homekit-id"] = replacement
+        await self.reader.async_set_on(True)
+        self.assertEqual(replacement.writes, [[(1, 109, True)]])
+        self.assertEqual(self.conn.writes, [])
+        self.assertEqual(self.conn.pollable_characteristics, {(1, 10)})
+        self.assertTrue(self.reader.data["on"])
+
+    async def test_offline_or_unloaded_connection_cannot_be_written(self):
+        self.conn.available = False
+        with self.assertRaises(HomeAssistantError):
+            await self.reader.async_set_on(True)
+        self.conn.available = True
+        self.conn.config_entry.state = EntryState.NOT_LOADED
+        with self.assertRaises(HomeAssistantError):
+            await self.reader.async_set_on(True)
+        self.assertEqual(self.conn.writes, [])
+
+    async def test_read_only_or_wrong_service_cannot_be_written(self):
+        for change in ("read_only", "wrong_service", "wrong_format"):
+            with self.subTest(change=change):
+                self.conn = ControlConnection()
+                self.connections["public-homekit-id"] = self.conn
+                char = self.conn.entity_map.aid(1).characteristics.iid(9)
+                if change == "read_only":
+                    char.perms = ["pr"]
+                elif change == "wrong_service":
+                    char.service.type = "3A4B59DC-CA78-4800-A2EF-6E2E187861E2"
+                else:
+                    char.format = "int"
+                with self.assertRaises(HomeAssistantError):
+                    await self.reader.async_set_on(True)
+                self.assertEqual(self.conn.writes, [])
+
+    async def test_unconfirmed_write_does_not_report_success(self):
+        await self.reader.async_refresh()
+        self.conn.ignore_writes = True
+        with self.assertRaisesRegex(HomeAssistantError, "did not confirm"):
+            await self.reader.async_set_on(True)
+        self.assertFalse(self.reader.data["on"])
+
+    async def test_write_connection_error_is_reported(self):
+        await self.reader.async_refresh()
+        self.conn.write_error = AccessoryDisconnectedError("disconnected")
+        with self.assertRaisesRegex(HomeAssistantError, "Unable to change"):
+            await self.reader.async_set_on(True)
+        self.assertFalse(self.reader.data["on"])
+
+    async def test_unknown_switch_status_is_unavailable_without_losing_meters(self):
+        self.conn.entity_map.process_changes({(1, 9): {"status": -70403}})
+        await self.reader.async_refresh()
+        entity = switch.OutletSwitch(self.reader)
+        self.assertIsNone(entity.is_on)
+        self.assertFalse(entity.available)
+        self.assertEqual(self.reader.data["voltage"], 121.421875)
+
+    async def test_switch_is_only_created_if_control_is_supported(self):
+        for supported in (True, False):
+            with self.subTest(supported=supported):
+                self.conn = ControlConnection()
+                self.connections["public-homekit-id"] = self.conn
+                if not supported:
+                    self.conn.entity_map.aid(1).characteristics.iid(9).perms = ["pr"]
+                await self.reader.async_refresh()
+                self.entry.runtime_data = self.reader
+                entities = []
+                await switch.async_setup_entry(self.hass, self.entry, entities.extend)
+                self.assertEqual(len(entities), 1 if supported else 0)
+
+    async def test_control_poll_registration_and_cleanup_preserve_native_keys(self):
+        self.conn.pollable_characteristics.add((1, 9))
+        await self.reader.async_refresh()
+        self.assertEqual(self.conn.requests[-1], {(1, 9), (1, 10), (1, 13), (1, 14), (1, 15)})
+        self.reader.release()
+        self.assertEqual(self.conn.pollable_characteristics, {(1, 9), (1, 10)})
+
+    async def test_polling_survives_native_switch_being_disabled(self):
+        self.conn.pollable_characteristics.add((1, 9))
+        await self.reader.async_refresh()
+        self.conn.remove_pollable_characteristics([(1, 9)])
+        await self.reader.async_refresh()
+        self.assertIn((1, 9), self.conn.requests[-1])
+        self.reader.release()
+        self.assertEqual(self.conn.pollable_characteristics, {(1, 10)})
+
+    async def test_controls_are_serialized_until_state_confirmation(self):
+        writes_and_reads = []
+        original_write = self.conn.put_characteristics
+        original_read = self.conn.async_update
+
+        async def write(payload):
+            writes_and_reads.append(("write", payload[0][2]))
+            await asyncio.sleep(0)
+            await original_write(payload)
+
+        async def read(*, poll_all=False):
+            writes_and_reads.append(("read", self.conn.entity_map.aid(1).characteristics.iid(9).value))
+            await original_read(poll_all=poll_all)
+
+        self.conn.put_characteristics = write
+        self.conn.async_update = read
+        await asyncio.gather(self.reader.async_set_on(True), self.reader.async_set_on(False))
+        self.assertEqual(writes_and_reads, [("write", True), ("read", True), ("write", False), ("read", False)])
+        self.assertFalse(self.reader.data["on"])
 
 
 if __name__ == "__main__":
