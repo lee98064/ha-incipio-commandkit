@@ -1,0 +1,2 @@
+# Match the HomeKit library used by Home Assistant Core 2026.9.4.
+aiohomekit==4.0.1

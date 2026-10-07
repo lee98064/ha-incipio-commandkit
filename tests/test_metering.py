@@ -2,10 +2,14 @@
 
 from enum import Enum
 import importlib.util
+import json
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
 import unittest
+
+from aiohomekit.model import Accessories
+from aiohomekit.protocol.statuscodes import HapStatusCode
 
 COMPONENT = Path(__file__).resolve().parents[1] / "custom_components" / "incipio_commandkit"
 
@@ -59,7 +63,7 @@ class Connection:
         self.pollable_characteristics = {(1, 10)}  # Native switch polling must survive.
         self.requests = []
         self.chars = [
-            SimpleNamespace(type=uuid.lower(), iid=13 + index + offset, perms=["pr"], value=value, available=True, status=0)
+            SimpleNamespace(type=uuid.lower(), iid=13 + index + offset, perms=["pr"], value=value, available=True, status=HapStatusCode.SUCCESS)
             for index, (uuid, value) in enumerate(zip(discovery.METER_UUIDS.values(), [118.78125, 0.003906, 0.0]))
         ]
         energy = SimpleNamespace(type=discovery.ENERGY_SERVICE.lower(), characteristics=self.chars)
@@ -158,10 +162,52 @@ class MeterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.reader._async_update_data(), {"voltage": None, "current": None, "power": None})
 
     async def test_hap_error_does_not_republish_cached_value(self):
-        self.conn.chars[0].status = -70403
+        self.conn.chars[0].status = HapStatusCode.RESOURCE_BUSY
         result = await self.reader._async_update_data()
         self.assertIsNone(result["voltage"])
         self.assertEqual(result["current"], 0.003906)
+
+    def use_real_accessory_model(self):
+        """Parse sanitized device metadata with the same library as HA 2026.9.4."""
+        fixture = Path(__file__).parent / "fixtures" / "commandkit_10219.json"
+        self.conn.entity_map = Accessories.from_list(json.loads(fixture.read_text()))
+
+    async def test_real_model_success_status_keeps_diagnostic_values(self):
+        self.use_real_accessory_model()
+        char = self.conn.entity_map.aid(1).characteristics.iid(13)
+        self.assertIs(char.status, HapStatusCode.SUCCESS)
+        self.assertNotEqual(char.status, 0)
+        self.assertEqual(
+            await self.reader._async_update_data(),
+            {"voltage": 121.421875, "current": 0.003906, "power": 0.0},
+        )
+
+    async def test_real_model_values_update_through_native_cache(self):
+        self.use_real_accessory_model()
+
+        async def poll(*, poll_all=False):
+            self.assertFalse(poll_all)
+            self.conn.entity_map.process_changes({
+                (1, 13): {"value": 120.5},
+                (1, 14): {"value": 0.5},
+                (1, 15): {"value": 60.25},
+            })
+
+        self.conn.async_update = poll
+        self.assertEqual(
+            await self.reader._async_update_data(),
+            {"voltage": 120.5, "current": 0.5, "power": 60.25},
+        )
+
+    async def test_real_model_error_and_recovery(self):
+        self.use_real_accessory_model()
+        self.conn.entity_map.process_changes({(1, 13): {"status": -70403}})
+        result = await self.reader._async_update_data()
+        self.assertIsNone(result["voltage"])
+        self.assertEqual(result["current"], 0.003906)
+        self.assertEqual(result["power"], 0.0)
+        self.conn.entity_map.process_changes({(1, 13): {"value": 120.5, "status": 0}})
+        self.assertEqual((await self.reader._async_update_data())["voltage"], 120.5)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ from datetime import timedelta
 import logging
 import math
 
+from aiohomekit.protocol.statuscodes import HapStatusCode
+
 from homeassistant.components.homekit_controller.const import KNOWN_DEVICES
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -92,7 +94,7 @@ class MeterCoordinator(DataUpdateCoordinator):
             values[key] = (
                 value
                 if char.available
-                and char.status == 0
+                and char.status == HapStatusCode.SUCCESS
                 and isinstance(value, (int, float))
                 and not isinstance(value, bool)
                 and math.isfinite(value)

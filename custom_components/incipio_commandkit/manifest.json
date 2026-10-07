@@ -1,7 +1,7 @@
 {
   "domain": "incipio_commandkit",
   "name": "Incipio CommandKit Metering",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "config_flow": true,
   "dependencies": [
     "homekit_controller"

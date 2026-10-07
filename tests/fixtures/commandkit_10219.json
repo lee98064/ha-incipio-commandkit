@@ -1,0 +1,231 @@
+[
+  {
+    "aid": 1,
+    "services": [
+      {
+        "iid": 1,
+        "type": "0000003E-0000-1000-8000-0026BB765291",
+        "characteristics": [
+          {
+            "type": "00000023-0000-1000-8000-0026BB765291",
+            "iid": 2,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "CommandKit test outlet",
+            "description": "Name",
+            "maxLen": 64
+          },
+          {
+            "type": "00000020-0000-1000-8000-0026BB765291",
+            "iid": 3,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "INCIPIO TECHNOLOGIES",
+            "description": "Manufacturer",
+            "maxLen": 64
+          },
+          {
+            "type": "00000021-0000-1000-8000-0026BB765291",
+            "iid": 4,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "CMNDKT-004",
+            "description": "Model",
+            "maxLen": 64
+          },
+          {
+            "type": "00000030-0000-1000-8000-0026BB765291",
+            "iid": 5,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "TEST_ONLY",
+            "description": "Serial Number",
+            "maxLen": 64
+          },
+          {
+            "type": "00000014-0000-1000-8000-0026BB765291",
+            "iid": 6,
+            "perms": [
+              "pw"
+            ],
+            "format": "bool",
+            "description": "Identify"
+          },
+          {
+            "type": "00000052-0000-1000-8000-0026BB765291",
+            "iid": 7,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "10219",
+            "description": "Firmware Revision",
+            "maxLen": 64
+          }
+        ]
+      },
+      {
+        "iid": 8,
+        "type": "00000047-0000-1000-8000-0026BB765291",
+        "characteristics": [
+          {
+            "type": "00000025-0000-1000-8000-0026BB765291",
+            "iid": 9,
+            "perms": [
+              "pr",
+              "pw",
+              "ev"
+            ],
+            "format": "bool",
+            "value": false,
+            "description": "On"
+          },
+          {
+            "type": "00000026-0000-1000-8000-0026BB765291",
+            "iid": 10,
+            "perms": [
+              "pr",
+              "ev"
+            ],
+            "format": "bool",
+            "value": false,
+            "description": "Outlet In Use"
+          },
+          {
+            "type": "00000023-0000-1000-8000-0026BB765291",
+            "iid": 11,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "CMNDKT-004",
+            "description": "Name",
+            "maxLen": 64
+          }
+        ]
+      },
+      {
+        "iid": 12,
+        "type": "14FA9D31-FC94-4F98-B00D-4AE878523748",
+        "characteristics": [
+          {
+            "type": "032B12CF-D4E8-4277-9021-188816FD00C6",
+            "iid": 13,
+            "perms": [
+              "pr"
+            ],
+            "format": "float",
+            "value": 121.421875,
+            "description": "Voltage",
+            "minValue": 0.0,
+            "maxValue": 300.0,
+            "minStep": 0.1
+          },
+          {
+            "type": "08874E2E-5B63-4EEC-A146-4E2D93E5642A",
+            "iid": 14,
+            "perms": [
+              "pr"
+            ],
+            "format": "float",
+            "value": 0.003906,
+            "description": "Current",
+            "minValue": 0.0,
+            "maxValue": 15.0,
+            "minStep": 0.1
+          },
+          {
+            "type": "D7467855-8B65-42EC-98E1-496FF153F342",
+            "iid": 15,
+            "perms": [
+              "pr"
+            ],
+            "format": "float",
+            "value": 0.0,
+            "description": "Watt",
+            "minValue": 0.0,
+            "maxValue": 2000.0,
+            "minStep": 0.1
+          },
+          {
+            "type": "00000023-0000-1000-8000-0026BB765291",
+            "iid": 16,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "Energy Usage",
+            "description": "Name",
+            "maxLen": 64
+          }
+        ]
+      },
+      {
+        "iid": 17,
+        "type": "3A4B59DC-CA78-4800-A2EF-6E2E187861E2",
+        "characteristics": [
+          {
+            "type": "FF6F58D2-B705-460B-BAFB-5AE9063B3B59",
+            "iid": 18,
+            "perms": [
+              "pr",
+              "pw",
+              "ev"
+            ],
+            "format": "bool",
+            "value": false,
+            "description": "OTA Start Upgrade"
+          },
+          {
+            "type": "4EF78115-F355-4103-BC5E-340F3112AD52",
+            "iid": 19,
+            "perms": [
+              "pr",
+              "ev"
+            ],
+            "format": "int",
+            "value": 0,
+            "description": "OTA Upgrade Progress",
+            "unit": "percentage",
+            "minValue": 0,
+            "maxValue": 100,
+            "minStep": 1
+          },
+          {
+            "type": "AAB71668-A4E4-49B3-AE21-46912C9B870E",
+            "iid": 20,
+            "perms": [
+              "pr",
+              "ev"
+            ],
+            "format": "int",
+            "value": 0,
+            "description": "OTA Upgrade Result",
+            "minValue": 0,
+            "maxValue": 4,
+            "minStep": 1
+          },
+          {
+            "type": "00000023-0000-1000-8000-0026BB765291",
+            "iid": 21,
+            "perms": [
+              "pr"
+            ],
+            "format": "string",
+            "value": "Firmware Update",
+            "description": "Name",
+            "maxLen": 64
+          }
+        ]
+      }
+    ]
+  }
+]

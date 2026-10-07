@@ -4,7 +4,7 @@ A Home Assistant custom integration that reads voltage, current and power from a
 
 讓已經配對到 Home Assistant 的 Incipio CommandKit CMNDKT-004 顯示電壓、電流與功率。預設每 **10 秒**更新，可在新增整合時選擇 5 秒。
 
-**0.1.0 為初版：11 個離線測試通過，尚未完成 HAOS 實機驗證。** 原始碼介面以 Home Assistant Core **2026.9.4**、aiohomekit **4.0.1** 為依據；更高版本仍需確認相容性。這是社群自訂整合，與 Incipio、CviLux 或 Opro9 沒有官方關係。
+**0.1.1 修正三個感測器一直顯示「未知」的狀態判斷錯誤。** 14 個離線測試包含真實 aiohomekit 資料模型；更新後仍待 HAOS 實機確認。原始碼介面以 Home Assistant Core **2026.9.4**、aiohomekit **4.0.1** 為依據；更高版本仍需確認相容性。這是社群自訂整合，與 Incipio、CviLux 或 Opro9 沒有官方關係。
 
 ## 使用前
 
@@ -25,7 +25,7 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
 
 ## 安裝方式二：手動安裝
 
-1. 到 [Releases](https://github.com/lee98064/ha-incipio-commandkit/releases/latest) 下載 **`incipio-commandkit-0.1.0.zip`**。
+1. 到 [Releases](https://github.com/lee98064/ha-incipio-commandkit/releases/latest) 下載 **`incipio-commandkit-0.1.1.zip`**。
 2. 解壓縮，把 `custom_components/incipio_commandkit/` 整個資料夾複製到 HA 的 **`/config/custom_components/incipio_commandkit/`**。可使用已設定的 Samba 分享或 File editor 等工具上傳。
 3. 確認檔案直接位於該資料夾，避免多包一層：
 
@@ -43,6 +43,14 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
 4. **重新啟動 Home Assistant Core**。這會短暫中斷 HA 控制，不需要重新配對插座。
 
 也可以下載 GitHub **Code → Download ZIP**，從其中取出相同的 `custom_components/incipio_commandkit/`。
+
+## 從 0.1.0 更新
+
+1. 用 HACS 更新，或下載上面的 ZIP，將 `custom_components/incipio_commandkit/` 覆蓋到 HA 的 `/config/custom_components/incipio_commandkit/`。
+2. **重新啟動 Home Assistant Core**，等 HomeKit Device 載入及下一次輪詢（預設 10 秒）。
+3. 回到原有裝置頁查看三個感測器。保留已新增的 Incipio 整合、entity 與 HomeKit Device 配對，不需要刪除或重新新增。
+
+0.1.0 錯把 aiohomekit 的成功狀態 Enum 與整數 `0` 比較，因此即使 HomeKit 有有效值，三個感測器仍會變成 `unknown`。0.1.1 使用 `HapStatusCode.SUCCESS` 比較；遇到實際的 HomeKit 錯誤時，仍不會把快取值當作正常讀值。
 
 ## 新增與使用
 
@@ -73,7 +81,7 @@ HACS 操作依據：[官方自訂 repository 文件](https://www.hacs.xyz/docs/f
 
 透過型號 `CMNDKT-004`、Energy Usage service UUID `14FA9D31-FC94-4F98-B00D-4AE878523748` 與三個可讀 characteristic UUID 找出 AID/IID，不把 13/14/15 寫死。
 
-V / A / W 的對應依裝置 dump 的數值與值域推定，**尚無同型號原廠 UUID 對照表，也未用獨立電表驗證**。保留原始數值，不乘倍率或四捨五入。建議先比較負載開／關時的讀值。
+韌體 10219 的裝置 metadata 將這三個 UUID 標為 `Voltage`、`Current`、`Watt`；V / A / W 的單位結合名稱、數值與值域推定，**尚無同型號原廠 UUID 對照表，也未用獨立電表驗證**。保留原始數值，不乘倍率或四捨五入。建議先比較負載開／關時的讀值。
 
 功率 **W** 不是累計電量 **kWh**；本整合沒有建立可直接加入 Energy Dashboard 的累計電量 entity。
 
@@ -93,7 +101,7 @@ V / A / W 的對應依裝置 dump 的數值與值域推定，**尚無同型號�
 
 **顯示 unavailable／unknown**
 
-先檢查 HomeKit Device 是否可用。未載入、缺少服務或連線已確認不可用時會 unavailable；單項 HomeKit 錯誤或非法數值顯示 unknown。回報問題時附上 Core 版本與相關錯誤即可；不要上傳 HomeKit 配對私鑰或 HA token。
+如果安裝的是 **0.1.0**，先更新至 **0.1.1 或以上**並重新啟動 Core；該版本有造成所有正常值變成 unknown 的錯誤。其他情況先檢查 HomeKit Device 是否可用。未載入、缺少服務或連線已確認不可用時會 unavailable；單項 HomeKit 錯誤或非法數值顯示 unknown。回報問題時附上 Core 版本與相關錯誤即可；不要上傳 HomeKit 配對私鑰或 HA token。
 
 **如何調整更新間隔**
 
@@ -106,13 +114,17 @@ V / A / W 的對應依裝置 dump 的數值與值域推定，**尚無同型號�
 ## 開發驗證
 
 ```sh
-python3 -m unittest discover -s tests -v
-python3 -m compileall -q custom_components tests
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m compileall -q custom_components tests
 ```
 
-11 個測試使用模擬 HA coordinator／HomeKit connection，驗證 UUID 解析、可讀權限、連線重新載入、IIDs 改變、登記清理、異常值及韌體 characteristic 不被額外輪詢／寫入。GitHub Actions 重跑相同的離線測試與語法檢查；不代表 HAOS 實機驗證。
+14 個測試使用模擬 HA coordinator／HomeKit connection 與真正的 **aiohomekit 4.0.1** 狀態 Enum。其中三個解析已去識別化的韌體 10219 accessory metadata，以真實資料模型驗證成功狀態、輪詢後的快取更新、錯誤及恢復。其他測試驗證 UUID 解析、可讀權限、連線重新載入、IIDs 改變、登記清理、異常值及韌體 characteristic 不被額外輪詢／寫入。GitHub Actions 重跑相同的離線測試與語法檢查；不代表 HAOS 實機驗證。
 
 原生介面依據：[Core 2026.9.4 HomeKit connection](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/components/homekit_controller/connection.py)、[Core coordinator](https://github.com/home-assistant/core/blob/2026.9.4/homeassistant/helpers/update_coordinator.py)、[HomeKit Device 文件](https://www.home-assistant.io/integrations/homekit_controller/)。
+
+狀態型別依據：[aiohomekit 4.0.1 HAP status codes](https://github.com/Jc2k/aiohomekit/blob/4.0.1/aiohomekit/protocol/statuscodes.py) 與 [EnumWithDescription](https://github.com/Jc2k/aiohomekit/blob/4.0.1/aiohomekit/enum.py)。
 
 ## License
 
