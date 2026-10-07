@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Incipio CommandKit 電力監測",
+        "description": "選取已經與 HomeKit Device 配對的插座。第一次建議每 10 秒更新。",
+        "data": {"device": "插座", "poll_seconds": "更新間隔（秒）"}
+      }
+    },
+    "error": {"device_unavailable": "所選插座目前無法使用。"},
+    "abort": {
+      "no_devices": "找不到已載入且有三個電力監測特徵的 CMNDKT-004。請確認既有 HomeKit Device 整合已載入，再試一次。",
+      "already_configured": "這顆插座已經設定電力監測。"
+    }
+  }
+}

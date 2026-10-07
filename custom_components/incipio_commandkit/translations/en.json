@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Incipio CommandKit metering",
+        "description": "Select an outlet already paired with HomeKit Device. Start with a 10-second refresh interval.",
+        "data": {"device": "Outlet", "poll_seconds": "Refresh interval (seconds)"}
+      }
+    },
+    "error": {"device_unavailable": "The selected outlet is no longer available."},
+    "abort": {
+      "no_devices": "No loaded CMNDKT-004 with the three metering characteristics was found. Confirm the existing HomeKit Device integration is loaded, then try again.",
+      "already_configured": "Metering for this outlet is already configured."
+    }
+  }
+}
